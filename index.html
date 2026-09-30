@@ -1,0 +1,1799 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Jelly Slice</title>
+<meta name="description" content="An ASMR jelly cutting game: jiggle it, drag it, slice it into pieces.">
+<style>
+  :root {
+    --ink: #4b3a55;
+    --glass: rgba(255,255,255,.62);
+    --glass-strong: rgba(255,255,255,.9);
+    --accent: #ff5d86;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #f5e3f0; color: var(--ink);
+    font-family: ui-rounded, "SF Pro Rounded", "Nunito", "Segoe UI", system-ui, sans-serif; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none;
+    -webkit-user-select: none; user-select: none; }
+  #bar {
+    position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    display: flex; gap: 6px; align-items: center; padding: 7px; border-radius: 999px;
+    background: var(--glass); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    box-shadow: 0 8px 30px rgba(120,70,120,.18), inset 0 0 0 1px rgba(255,255,255,.7);
+    max-width: calc(100vw - 16px); flex-wrap: wrap; justify-content: center;
+  }
+  #bar button {
+    appearance: none; border: 0; cursor: pointer; font: inherit; font-weight: 700; font-size: 14px; color: var(--ink);
+    padding: 9px 14px; border-radius: 999px; background: transparent; display: inline-flex; gap: 7px; align-items: center;
+    transition: background .15s, transform .1s, color .15s;
+  }
+  #bar button:hover { background: rgba(255,255,255,.75); }
+  #bar button:active { transform: scale(.95); }
+  #bar button.on { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(255,93,134,.4); }
+  #bar svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #bar .sep { width: 1px; height: 22px; background: rgba(75,58,85,.18); margin: 0 3px; }
+  #bar .dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 -2px 3px rgba(0,0,0,.25), inset 0 2px 3px rgba(255,255,255,.6); }
+  #hud { position: fixed; top: 14px; left: 16px; font-weight: 800; letter-spacing: .02em; font-size: 15px; opacity: .75; pointer-events: none; }
+  #hud small { display: block; font-weight: 600; opacity: .7; font-size: 12px; margin-top: 2px; }
+  #hint {
+    position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); padding: 8px 16px; border-radius: 999px;
+    background: var(--glass-strong); font-weight: 700; font-size: 13px; pointer-events: none; white-space: nowrap;
+    box-shadow: 0 6px 20px rgba(120,70,120,.15); transition: opacity .8s; max-width: calc(100vw - 24px); overflow: hidden; text-overflow: ellipsis;
+  }
+  #hint.hide { opacity: 0; }
+  kbd { font: inherit; font-weight: 800; padding: 1px 6px; border-radius: 6px; background: rgba(75,58,85,.1); }
+  @media (max-width: 560px) { #bar button { padding: 8px 10px; font-size: 13px; } #bar .lbl { display: none; } #hint { white-space: normal; text-align: center; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">JELLY SLICE<small id="count">1 piece</small></div>
+<div id="hint">Drag the jelly to jiggle it &middot; press <kbd>K</kbd> for the knife, or slice with right-drag</div>
+<div id="bar">
+  <button id="btnGrab" class="on" title="Grab tool (G)">
+    <svg viewBox="0 0 24 24"><path d="M8 13V6a1.5 1.5 0 0 1 3 0v5m0 0V4.5a1.5 1.5 0 0 1 3 0V11m0 0V6a1.5 1.5 0 0 1 3 0v7m0 0V9.5a1.5 1.5 0 0 1 3 0V15a7 7 0 0 1-7 7h-1.5a7 7 0 0 1-5.6-2.8L4 15.5a1.6 1.6 0 0 1 2.5-2L8 15"/></svg>
+    <span class="lbl">Grab</span></button>
+  <button id="btnKnife" title="Knife tool (K)">
+    <svg viewBox="0 0 24 24"><path d="M3 21 19 5c1.5-1.5 2-3 2-3s-2 .3-4 2L9 12l-1 4-5 5Z"/><path d="m8 16 3 3"/></svg>
+    <span class="lbl">Knife</span></button>
+  <span class="sep"></span>
+  <button id="btnShape" title="Change shape"><span class="lbl" id="shapeName">Cube</span></button>
+  <button id="btnColor" title="Change flavour"><span class="dot" id="colorDot"></span><span class="lbl" id="colorName">Strawberry</span></button>
+  <button id="btnReset" title="New jelly (R)">
+    <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+    <span class="lbl">New jelly</span></button>
+  <button id="btnSound" title="Sound (M)">
+    <svg viewBox="0 0 24 24" id="sndIcon"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/></svg></button>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   Jelly Slice
+   - Soft body: triangle mesh, XPBD (small-steps) edge + area constraints
+   - Cutting: exact geometric crack propagation through the mesh
+     (edge splits + vertex duplication), pieces split into new bodies
+   - Everything (audio too) is generated procedurally, no assets.
+   ===================================================================== */
+
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const KEYM = 4194304; // edge key multiplier (2^22)
+
+/* ------------------------------------------------------------------ */
+/* Config                                                              */
+/* ------------------------------------------------------------------ */
+const CFG = {
+  gravity: 2600,
+  substeps: 20,
+  edgeCompliance: 2.6e-5,
+  areaCompliance: 3e-4,
+  edgeDamp: 1.5,          // 1/s, relative velocity damping along edges
+  airDamp: 0.15,        // 1/s
+  floorFriction: 0.7,
+  pieceFriction: 0.6,
+  meshSpacing: 14,
+  skin: 1.2,            // collision skin between pieces
+  grabRadius: 62,
+  grabRate: 70,
+  anchorRate: 28,       // rad/s, how tightly the grab point follows the pointer
+  anchorMaxSpeed: 4200,
+  minPieceArea: 60,
+  cutGap: 1.8,
+  maxSpeed: 6000,
+};
+
+const SHAPES = ['Cube', 'Pudding', 'Dome', 'Tower'];
+const COLORS = [
+  { name: 'Strawberry', h: 349, s: 96 },
+  { name: 'Lime',       h: 96,  s: 80 },
+  { name: 'Orange',     h: 27,  s: 98 },
+  { name: 'Grape',      h: 274, s: 74 },
+  { name: 'Blueberry',  h: 208, s: 92 },
+  { name: 'Lemon',      h: 49,  s: 98 },
+];
+const hsl = (h, s, l, a = 1) => `hsla(${h},${s}%,${l}%,${a})`;
+
+/* ------------------------------------------------------------------ */
+/* Canvas / world                                                      */
+/* ------------------------------------------------------------------ */
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const HAS_FILTER = typeof ctx.filter === 'string';
+
+const world = { W: 1000, H: 620, floor: 500, vs: 1, dpr: 1, cssW: 1000, cssH: 620 };
+let bgCanvas = null;
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cssW = window.innerWidth, cssH = window.innerHeight;
+  const oldFloor = world.floor, oldW = world.W;
+  const vs = clamp(Math.min(cssW / 900, cssH / 640), 0.45, 1.6);
+  world.vs = vs; world.dpr = dpr; world.cssW = cssW; world.cssH = cssH;
+  world.W = cssW / vs; world.H = cssH / vs;
+  world.floor = world.H * 0.79;
+  canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
+  // keep existing pieces on the plate
+  if (pieces.length) {
+    const dy = world.floor - oldFloor, dx = (world.W - oldW) / 2;
+    for (const p of pieces) for (let i = 0; i < p.n; i++) { p.x[i] += dx; p.y[i] += dy; p.px[i] += dx; p.py[i] += dy; }
+  }
+  renderBackground();
+}
+
+/* ------------------------------------------------------------------ */
+/* Shape + mesh generation                                             */
+/* ------------------------------------------------------------------ */
+function roundedPoly(c, r, seg = 10) {
+  const out = [], n = c.length;
+  for (let i = 0; i < n; i++) {
+    const p = c[i], a = c[(i + n - 1) % n], b = c[(i + 1) % n];
+    const la = Math.hypot(a[0] - p[0], a[1] - p[1]), lb = Math.hypot(b[0] - p[0], b[1] - p[1]);
+    const rr = Math.min(r, la / 2, lb / 2);
+    const t1 = [p[0] + (a[0] - p[0]) / la * rr, p[1] + (a[1] - p[1]) / la * rr];
+    const t2 = [p[0] + (b[0] - p[0]) / lb * rr, p[1] + (b[1] - p[1]) / lb * rr];
+    for (let k = 0; k <= seg; k++) {
+      const t = k / seg, u = 1 - t;
+      out.push([u * u * t1[0] + 2 * u * t * p[0] + t * t * t2[0], u * u * t1[1] + 2 * u * t * p[1] + t * t * t2[1]]);
+    }
+  }
+  return out;
+}
+
+function shapePolygon(name, cx, base) {
+  switch (name) {
+    case 'Pudding': {
+      const bw = 170, tw = 118, h = 262;
+      return roundedPoly([[cx - bw, base], [cx + bw, base], [cx + tw, base - h], [cx - tw, base - h]], 34);
+    }
+    case 'Dome': {
+      const rx = 200, ry = 215, pts = [];
+      const N = 72;
+      for (let i = 0; i <= N; i++) { const a = Math.PI + (i / N) * Math.PI; pts.push([cx + Math.cos(a) * rx, base + Math.sin(a) * ry]); }
+      return pts;
+    }
+    case 'Tower':
+      return roundedPoly([[cx - 108, base], [cx + 108, base], [cx + 108, base - 350], [cx - 108, base - 350]], 42);
+    default:
+      return roundedPoly([[cx - 178, base], [cx + 178, base], [cx + 178, base - 238], [cx - 178, base - 238]], 34);
+  }
+}
+
+function pointInPoly(poly, x, y) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+function distToPoly(poly, x, y) {
+  let best = 1e18;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[j], b = poly[i];
+    const ex = b[0] - a[0], ey = b[1] - a[1], l2 = ex * ex + ey * ey;
+    let t = l2 > 0 ? ((x - a[0]) * ex + (y - a[1]) * ey) / l2 : 0;
+    t = clamp(t, 0, 1);
+    const dx = a[0] + ex * t - x, dy = a[1] + ey * t - y;
+    const d = dx * dx + dy * dy;
+    if (d < best) best = d;
+  }
+  return Math.sqrt(best);
+}
+
+// Resample a dense closed polyline at roughly even spacing h, keeping sharp corners.
+function resamplePoly(poly, h) {
+  const n = poly.length, corner = [];
+  for (let i = 0; i < n; i++) {
+    const a = poly[(i + n - 1) % n], b = poly[i], c = poly[(i + 1) % n];
+    const a1 = Math.atan2(b[1] - a[1], b[0] - a[0]), a2 = Math.atan2(c[1] - b[1], c[0] - b[0]);
+    let d = Math.abs(a2 - a1); if (d > Math.PI) d = TAU - d;
+    if (d > 0.6) corner.push(i);
+  }
+  if (!corner.length) corner.push(0);
+  const out = [];
+  for (let ci = 0; ci < corner.length; ci++) {
+    const i0 = corner[ci], i1 = corner[(ci + 1) % corner.length];
+    const seg = [];
+    let i = i0;
+    do { seg.push(poly[i]); i = (i + 1) % n; } while (i !== i1);
+    seg.push(poly[i1]);
+    let L = 0; const cum = [0];
+    for (let k = 1; k < seg.length; k++) { L += Math.hypot(seg[k][0] - seg[k - 1][0], seg[k][1] - seg[k - 1][1]); cum.push(L); }
+    const m = Math.max(1, Math.round(L / h));
+    let k = 0;
+    for (let s = 0; s < m; s++) {
+      const target = (s / m) * L;
+      while (k < seg.length - 2 && cum[k + 1] < target) k++;
+      const f = (target - cum[k]) / Math.max(1e-9, cum[k + 1] - cum[k]);
+      out.push([lerp(seg[k][0], seg[k + 1][0], f), lerp(seg[k][1], seg[k + 1][1], f)]);
+    }
+  }
+  return out;
+}
+
+// Bowyer-Watson Delaunay triangulation
+function delaunay(pts) {
+  const n = pts.length;
+  let minX = 1e18, minY = 1e18, maxX = -1e18, maxY = -1e18;
+  for (const p of pts) { minX = Math.min(minX, p[0]); minY = Math.min(minY, p[1]); maxX = Math.max(maxX, p[0]); maxY = Math.max(maxY, p[1]); }
+  const d = Math.max(maxX - minX, maxY - minY) * 20 + 100, cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  const P = pts.concat([[cx - d, cy - d], [cx, cy + d], [cx + d, cy - d]]);
+  const mk = (a, b, c) => {
+    const ax = P[a][0], ay = P[a][1], bx = P[b][0], by = P[b][1], ccx = P[c][0], ccy = P[c][1];
+    const D = 2 * (ax * (by - ccy) + bx * (ccy - ay) + ccx * (ay - by));
+    const ux = ((ax * ax + ay * ay) * (by - ccy) + (bx * bx + by * by) * (ccy - ay) + (ccx * ccx + ccy * ccy) * (ay - by)) / D;
+    const uy = ((ax * ax + ay * ay) * (ccx - bx) + (bx * bx + by * by) * (ax - ccx) + (ccx * ccx + ccy * ccy) * (bx - ax)) / D;
+    return { a, b, c, ux, uy, r2: (ax - ux) ** 2 + (ay - uy) ** 2 };
+  };
+  let tris = [mk(n, n + 1, n + 2)];
+  for (let i = 0; i < n; i++) {
+    const px = P[i][0], py = P[i][1];
+    const bad = [], keep = [];
+    for (const t of tris) ((px - t.ux) ** 2 + (py - t.uy) ** 2 < t.r2 - 1e-9 ? bad : keep).push(t);
+    const edges = new Map();
+    for (const t of bad) for (const [a, b] of [[t.a, t.b], [t.b, t.c], [t.c, t.a]]) {
+      const k = a < b ? a * KEYM + b : b * KEYM + a;
+      edges.has(k) ? edges.delete(k) : edges.set(k, [a, b]);
+    }
+    for (const [a, b] of edges.values()) keep.push(mk(a, b, i));
+    tris = keep;
+  }
+  return tris.filter(t => t.a < n && t.b < n && t.c < n).map(t => [t.a, t.b, t.c]);
+}
+
+function buildMesh(poly, h) {
+  const boundary = resamplePoly(poly, h);
+  let minX = 1e18, minY = 1e18, maxX = -1e18, maxY = -1e18;
+  for (const p of poly) { minX = Math.min(minX, p[0]); minY = Math.min(minY, p[1]); maxX = Math.max(maxX, p[0]); maxY = Math.max(maxY, p[1]); }
+  const pts = boundary.map(p => [p[0] + (Math.random() - .5) * 0.02, p[1] + (Math.random() - .5) * 0.02]);
+  const rowH = h * 0.866;
+  let row = 0;
+  for (let y = maxY - rowH * 0.9; y > minY; y -= rowH, row++) {
+    for (let x = minX + (row % 2 ? h / 2 : 0) + h * 0.5; x < maxX; x += h) {
+      const jx = x + (Math.random() - .5) * h * 0.06, jy = y + (Math.random() - .5) * h * 0.06;
+      if (pointInPoly(poly, jx, jy) && distToPoly(poly, jx, jy) > h * 0.62) pts.push([jx, jy]);
+    }
+  }
+  const tris = delaunay(pts).filter(t => {
+    const cx = (pts[t[0]][0] + pts[t[1]][0] + pts[t[2]][0]) / 3, cy = (pts[t[0]][1] + pts[t[1]][1] + pts[t[2]][1]) / 3;
+    return pointInPoly(poly, cx, cy);
+  });
+  return { pts, tris };
+}
+
+/* ------------------------------------------------------------------ */
+/* Piece (soft body) data                                              */
+/* ------------------------------------------------------------------ */
+let pieces = [];
+let uidCounter = 1;
+let grpCounter = 1;
+let pieceCounter = 1;
+
+function triArea(x, y, a, b, c) {
+  return 0.5 * ((x[b] - x[a]) * (y[c] - y[a]) - (y[b] - y[a]) * (x[c] - x[a]));
+}
+
+function makePiece(src, style) {
+  const p = {
+    id: pieceCounter++,
+    x: src.x, y: src.y, px: src.px || src.x.slice(), py: src.py || src.y.slice(),
+    vx: src.vx, vy: src.vy, rx: src.rx, ry: src.ry, uid: src.uid, tri: src.tri,
+    crack: src.crack || new Array(src.x.length).fill(0),
+    grp: src.grp || new Array(src.x.length).fill(0),
+    hue: style.hue, sat: style.sat,
+    lastThud: 0, impact: 0,
+  };
+  computeDerived(p);
+  return p;
+}
+
+function computeDerived(p) {
+  const n = p.x.length, nt = p.tri.length / 3;
+  p.n = n;
+  if (!p.cn || p.cn.length !== n) p.cn = new Float64Array(n);
+  // orient triangles consistently (positive rest area) + rest areas
+  const tri = p.tri;
+  p.ta = new Float64Array(nt);
+  let area = 0;
+  for (let t = 0; t < nt; t++) {
+    const a = tri[3 * t], b = tri[3 * t + 1], c = tri[3 * t + 2];
+    p.ta[t] = triArea(p.rx, p.ry, a, b, c);
+    area += Math.abs(triArea(p.x, p.y, a, b, c));
+  }
+  p.area = area;
+  // unique edges
+  const em = new Map(), ea = [], eb = [], el = [];
+  for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) {
+    const a = tri[3 * t + k], b = tri[3 * t + (k + 1) % 3];
+    const key = a < b ? a * KEYM + b : b * KEYM + a;
+    if (!em.has(key)) {
+      em.set(key, 1); ea.push(a); eb.push(b);
+      el.push(Math.hypot(p.rx[a] - p.rx[b], p.ry[a] - p.ry[b]));
+    }
+  }
+  p.ea = Int32Array.from(ea); p.eb = Int32Array.from(eb); p.el = Float64Array.from(el);
+  p.ne = ea.length;
+  // boundary loops
+  const dir = new Set(); const nxt = new Map();
+  for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) dir.add(tri[3 * t + k] * KEYM + tri[3 * t + (k + 1) % 3]);
+  const bedges = [];
+  for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) {
+    const a = tri[3 * t + k], b = tri[3 * t + (k + 1) % 3];
+    if (!dir.has(b * KEYM + a)) { bedges.push([a, b]); if (!nxt.has(a)) nxt.set(a, []); nxt.get(a).push(b); }
+  }
+  const loops = [];
+  const used = new Set();
+  for (const [a0, b0] of bedges) {
+    if (used.has(a0 * KEYM + b0)) continue;
+    const loop = [a0]; used.add(a0 * KEYM + b0);
+    let cur = b0, guard = 0;
+    while (cur !== a0 && guard++ < 100000) {
+      loop.push(cur);
+      const opts = nxt.get(cur);
+      let next = -1;
+      if (opts) for (const o of opts) if (!used.has(cur * KEYM + o)) { next = o; break; }
+      if (next < 0) break;
+      used.add(cur * KEYM + next); cur = next;
+    }
+    if (loop.length >= 3) loops.push(Int32Array.from(loop));
+  }
+  p.loops = loops;
+  // slit faces: crack vertices whose other copy still lives in this piece
+  p.cv = []; p.ce = [];
+  const gcount = new Map();
+  for (let i = 0; i < n; i++) if (p.grp[i]) gcount.set(p.grp[i], (gcount.get(p.grp[i]) || 0) + 1);
+  const slit = i => p.grp[i] && gcount.get(p.grp[i]) > 1;
+  loops.forEach((L, li) => {
+    for (let i = 0; i < L.length; i++) {
+      const a = L[i], b = L[(i + 1) % L.length];
+      if (slit(a)) p.cv.push(a, li, i);
+      if ((slit(a) || slit(b)) && p.crack[a] && p.crack[b]) p.ce.push(a, b, li, i);
+    }
+  });
+  p.bb = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  updateBBox(p);
+  computeHighlights(p);
+  computeBubbles(p);
+}
+
+function updateBBox(p) {
+  let x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
+  const x = p.x, y = p.y;
+  for (let i = 0; i < p.n; i++) { if (x[i] < x0) x0 = x[i]; if (x[i] > x1) x1 = x[i]; if (y[i] < y0) y0 = y[i]; if (y[i] > y1) y1 = y[i]; }
+  const b = p.bb; b.x0 = x0; b.y0 = y0; b.x1 = x1; b.y1 = y1;
+}
+
+function computeBubbles(p) {
+  p.bub = [];
+  if (!bubbles.length) return;
+  const nt = p.tri.length / 3, tri = p.tri, rx = p.rx, ry = p.ry;
+  for (const bu of bubbles) {
+    for (let t = 0; t < nt; t++) {
+      const a = tri[3 * t], b = tri[3 * t + 1], c = tri[3 * t + 2];
+      const mnx = Math.min(rx[a], rx[b], rx[c]), mxx = Math.max(rx[a], rx[b], rx[c]);
+      if (bu.x < mnx || bu.x > mxx) continue;
+      const l = baryOf(bu.x, bu.y, rx[a], ry[a], rx[b], ry[b], rx[c], ry[c]);
+      if (l[0] >= 0.05 && l[1] >= 0.05 && l[2] >= 0.05) { p.bub.push({ a, b, c, l, r: bu.r }); break; }
+    }
+  }
+}
+
+// points along a line in *rest* space, anchored to triangles (barycentric), so the specular
+// streak follows the wobble smoothly and survives cuts
+function computeHighlights(p) {
+  let x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
+  for (let i = 0; i < p.n; i++) { x0 = Math.min(x0, p.rx[i]); x1 = Math.max(x1, p.rx[i]); y0 = Math.min(y0, p.ry[i]); y1 = Math.max(y1, p.ry[i]); }
+  const W = x1 - x0, H = y1 - y0;
+  p.hl = [];
+  if (W < 46 || H < 46) return;
+  const nt = p.tri.length / 3, tri = p.tri, rx = p.rx, ry = p.ry;
+  const locate = (x, y) => {
+    for (let t = 0; t < nt; t++) {
+      const a = tri[3 * t], b = tri[3 * t + 1], c = tri[3 * t + 2];
+      if (x < Math.min(rx[a], rx[b], rx[c]) || x > Math.max(rx[a], rx[b], rx[c]) || y < Math.min(ry[a], ry[b], ry[c]) || y > Math.max(ry[a], ry[b], ry[c])) continue;
+      const l = baryOf(x, y, rx[a], ry[a], rx[b], ry[b], rx[c], ry[c]);
+      if (l[0] >= 0 && l[1] >= 0 && l[2] >= 0) return { a, b, c, l };
+    }
+    return null;
+  };
+  const tryLine = (fx, fy0, fy1) => {
+    const out = [];
+    for (let s = 0; s <= 10; s++) {
+      const hit = locate(x0 + W * fx, y0 + H * lerp(fy0, fy1, s / 10));
+      if (hit) out.push(hit);
+    }
+    return out;
+  };
+  const inset = Math.max(0.1, Math.min(0.2, 30 / W));
+  let line = tryLine(inset, 0.16, 0.74);
+  if (line.length < 6) line = tryLine(inset + 0.14, 0.16, 0.74);
+  if (line.length >= 6) p.hl = line;
+}
+
+/* ------------------------------------------------------------------ */
+/* Spawning                                                            */
+/* ------------------------------------------------------------------ */
+let shapeIdx = 0, colorIdx = 0;
+let bubbles = [];   // tiny air bubbles, fixed in the jelly's rest space
+
+function spawnJelly(dropHeight = 70) {
+  pieces = [];
+  const poly = shapePolygon(SHAPES[shapeIdx], world.W / 2, world.floor - dropHeight);
+  const { pts, tris } = buildMesh(poly, CFG.meshSpacing);
+  const n = pts.length;
+  bubbles = [];
+  for (let tries = 0; bubbles.length < 26 && tries < 400; tries++) {
+    let x0 = 1e18, x1 = -1e18, y0 = 1e18, y1 = -1e18;
+    for (const q of poly) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
+    const bx = lerp(x0, x1, Math.random()), by = lerp(y0, y1, Math.random());
+    if (pointInPoly(poly, bx, by) && distToPoly(poly, bx, by) > 16) bubbles.push({ x: bx, y: by, r: 1.3 + Math.pow(Math.random(), 2.2) * 3.4 });
+  }
+  const x = pts.map(p => p[0]), y = pts.map(p => p[1]);
+  const flat = [];
+  for (const t of tris) {
+    let [a, b, c] = t;
+    if (triArea(x, y, a, b, c) < 0) { const tmp = b; b = c; c = tmp; }
+    flat.push(a, b, c);
+  }
+  const c = COLORS[colorIdx];
+  pieces.push(makePiece({
+    x, y, rx: x.slice(), ry: y.slice(), vx: new Array(n).fill(0), vy: new Array(n).fill(0),
+    uid: pts.map(() => uidCounter++), tri: flat,
+  }, { hue: c.h, sat: c.s }));
+  grab = null; knife.tipUid = -1;
+  updateCount();
+}
+
+/* ------------------------------------------------------------------ */
+/* Physics                                                             */
+/* ------------------------------------------------------------------ */
+function substep(h) {
+  const g = CFG.gravity;
+  const aE = CFG.edgeCompliance / (h * h), aA = CFG.areaCompliance / (h * h);
+  const airK = Math.exp(-CFG.airDamp * h);
+  const dampK = Math.min(0.4, CFG.edgeDamp * h);
+  const maxV = CFG.maxSpeed;
+
+  for (const p of pieces) {
+    const { x, y, px, py, vx, vy, n } = p;
+    for (let i = 0; i < n; i++) {
+      vy[i] += g * h;
+      px[i] = x[i]; py[i] = y[i];
+      x[i] += vx[i] * h; y[i] += vy[i] * h;
+    }
+  }
+
+  for (const p of pieces) {
+    const { x, y, ea, eb, el, tri, ta } = p;
+    // edge constraints
+    for (let e = 0, ne = p.ne; e < ne; e++) {
+      const a = ea[e], b = eb[e];
+      const dx = x[b] - x[a], dy = y[b] - y[a];
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 1e-9) continue;
+      const L0 = el[e];
+      const dl = -(d - L0) / (2 + (d > 0.6 * L0 ? aE : aE * 0.08)) / d;
+      x[a] -= dx * dl; y[a] -= dy * dl; x[b] += dx * dl; y[b] += dy * dl;
+    }
+    // triangle area constraints
+    for (let t = 0, nt = ta.length; t < nt; t++) {
+      const A0 = ta[t];
+      if (A0 < 0.05) continue;
+      const i = tri[3 * t], j = tri[3 * t + 1], k = tri[3 * t + 2];
+      const gxi = 0.5 * (y[j] - y[k]), gyi = 0.5 * (x[k] - x[j]);
+      const gxj = 0.5 * (y[k] - y[i]), gyj = 0.5 * (x[i] - x[k]);
+      const gxk = 0.5 * (y[i] - y[j]), gyk = 0.5 * (x[j] - x[i]);
+      const A = 0.5 * ((x[j] - x[i]) * (y[k] - y[i]) - (y[j] - y[i]) * (x[k] - x[i]));
+      const s = gxi * gxi + gyi * gyi + gxj * gxj + gyj * gyj + gxk * gxk + gyk * gyk;
+      const r = A / A0;
+      const dl = -(A - A0) / (s + (r > 0.55 ? aA : aA * r * r * 0.7 * (r > 0 ? 1 : 0) + 0.02));
+      x[i] += dl * gxi; y[i] += dl * gyi; x[j] += dl * gxj; y[j] += dl * gyj; x[k] += dl * gxk; y[k] += dl * gyk;
+    }
+  }
+
+  applyGrab(h);
+
+  // bounds + velocity update
+  const floor = world.floor, left = 14, right = world.W - 14;
+  for (const p of pieces) {
+    const { x, y, px, py, vx, vy, n, cn } = p;
+    let maxImpact = 0;
+    for (let i = 0; i < n; i++) {
+      cn[i] = 0;
+      if (y[i] > floor) { cn[i] = (y[i] - floor) / h; if (cn[i] > maxImpact) maxImpact = cn[i]; y[i] = floor; }
+      if (x[i] < left) x[i] = left; else if (x[i] > right) x[i] = right;
+      let ux = (x[i] - px[i]) / h, uy = (y[i] - py[i]) / h;
+      const sp = ux * ux + uy * uy;
+      if (sp > maxV * maxV) { const f = maxV / Math.sqrt(sp); ux *= f; uy *= f; }
+      vx[i] = ux * airK; vy[i] = uy * airK;
+    }
+    if (maxImpact > p.impact) p.impact = maxImpact;
+    // internal damping: relative velocity along edges
+    const { ea, eb, ne } = p;
+    for (let e = 0; e < ne; e++) {
+      const a = ea[e], b = eb[e];
+      const dx = x[b] - x[a], dy = y[b] - y[a];
+      const d2 = dx * dx + dy * dy;
+      if (d2 < 1e-9) continue;
+      const inv = 1 / Math.sqrt(d2);
+      const nx = dx * inv, ny = dy * inv;
+      const rel = (vx[b] - vx[a]) * nx + (vy[b] - vy[a]) * ny;
+      const imp = rel * dampK * 0.5;
+      vx[a] += nx * imp; vy[a] += ny * imp; vx[b] -= nx * imp; vy[b] -= ny * imp;
+    }
+    // floor friction (Coulomb on the contact impulse)
+    for (let i = 0; i < n; i++) {
+      if (cn[i] > 0) {
+        const lim = CFG.floorFriction * cn[i];
+        const v = vx[i];
+        if (Math.abs(v) <= lim) vx[i] = 0; else vx[i] = v - Math.sign(v) * lim;
+      }
+    }
+    updateBBox(p);
+    selfCollide(p);
+  }
+
+  // piece <-> piece contacts: positions are pushed apart, velocities only get contact impulses
+  if (pieces.length > 1) for (let i = 0; i < pieces.length; i++) for (let j = i + 1; j < pieces.length; j++) collidePair(pieces[i], pieces[j]);
+}
+
+function pointInPiece(p, x, y) {
+  const b = p.bb;
+  if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) return false;
+  let inside = false;
+  const X = p.x, Y = p.y;
+  for (const L of p.loops) {
+    for (let i = 0, j = L.length - 1; i < L.length; j = i++) {
+      const a = L[i], c = L[j];
+      if ((Y[a] > y) !== (Y[c] > y) && x < (X[c] - X[a]) * (y - Y[a]) / (Y[c] - Y[a]) + X[a]) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function collidePair(A, B) {
+  const s = CFG.skin + 1;
+  if (A.bb.x1 + s < B.bb.x0 || B.bb.x1 + s < A.bb.x0 || A.bb.y1 + s < B.bb.y0 || B.bb.y1 + s < A.bb.y0) return;
+  pushOut(A, B); pushOut(B, A);
+}
+
+// push boundary vertices of A out of piece B
+function pushOut(A, B) {
+  const skin = CFG.skin;
+  const bb = B.bb, X = A.x, Y = A.y, BX = B.x, BY = B.y;
+  for (const LA of A.loops) for (let li = 0; li < LA.length; li++) {
+    const v = LA[li];
+    const x = X[v], y = Y[v];
+    if (x < bb.x0 - skin || x > bb.x1 + skin || y < bb.y0 - skin || y > bb.y1 + skin) continue;
+    let best = 1e18, bt = 0, ba = -1, bc = -1, inside = false;
+    for (const L of B.loops) {
+      for (let i = 0, j = L.length - 1; i < L.length; j = i++) {
+        const a = L[j], c = L[i];
+        const ax = BX[a], ay = BY[a], ex = BX[c] - ax, ey = BY[c] - ay;
+        if ((BY[c] > y) !== (ay > y) && x < ex * (y - ay) / ey + ax) inside = !inside;
+        const l2 = ex * ex + ey * ey;
+        let t = l2 > 1e-12 ? ((x - ax) * ex + (y - ay) * ey) / l2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = ax + ex * t - x, dy = ay + ey * t - y, d = dx * dx + dy * dy;
+        if (d < best) { best = d; bt = t; ba = a; bc = c; }
+      }
+    }
+    if (ba < 0) continue;
+    const dist = Math.sqrt(best);
+    if (!inside && dist >= skin) continue;
+    const cxp = BX[ba] + (BX[bc] - BX[ba]) * bt, cyp = BY[ba] + (BY[bc] - BY[ba]) * bt;
+    let nx, ny, push;
+    if (inside) {
+      if (dist < 1e-6) { const ex = BX[bc] - BX[ba], ey = BY[bc] - BY[ba], l = Math.hypot(ex, ey) || 1; nx = ey / l; ny = -ex / l; }
+      else { nx = (cxp - x) / dist; ny = (cyp - y) / dist; }
+      push = dist + skin;
+    } else {
+      nx = (x - cxp) / dist; ny = (y - cyp) / dist; push = skin - dist;
+    }
+    applyContact(A, v, B, ba, bc, bt, nx, ny, push);
+  }
+}
+
+// vertex v of A touches the point at parameter bt on edge (ba,bc) of B; n points out of B
+function applyContact(A, v, B, ba, bc, bt, nx, ny, push) {
+  if (push > 6) push = 6;
+  const X = A.x, Y = A.y, BX = B.x, BY = B.y;
+  const wB = (1 - bt) * (1 - bt) + bt * bt, tot = 1 + wB;
+  const sh = push / tot;
+  X[v] += nx * sh; Y[v] += ny * sh;
+  BX[ba] -= nx * sh * (1 - bt); BY[ba] -= ny * sh * (1 - bt);
+  BX[bc] -= nx * sh * bt; BY[bc] -= ny * sh * bt;
+  // contact impulse: cancel approaching normal velocity, Coulomb friction on the tangent
+  const bvx = B.vx[ba] * (1 - bt) + B.vx[bc] * bt, bvy = B.vy[ba] * (1 - bt) + B.vy[bc] * bt;
+  let rvx = A.vx[v] - bvx, rvy = A.vy[v] - bvy;
+  const vn = rvx * nx + rvy * ny;
+  let J = 0;
+  if (vn < 0) {
+    J = -vn / tot;
+    A.vx[v] += nx * J; A.vy[v] += ny * J;
+    B.vx[ba] -= nx * J * (1 - bt); B.vy[ba] -= ny * J * (1 - bt);
+    B.vx[bc] -= nx * J * bt; B.vy[bc] -= ny * J * bt;
+    rvx += nx * J * tot; rvy += ny * J * tot;
+  }
+  const rn = rvx * nx + rvy * ny;
+  const tx = rvx - rn * nx, ty = rvy - rn * ny, tl = Math.hypot(tx, ty);
+  if (tl > 1e-6) {
+    const jt = Math.min(tl / tot, CFG.pieceFriction * J + 0.02 * tl / tot);
+    const ux = tx / tl, uy = ty / tl;
+    A.vx[v] -= ux * jt; A.vy[v] -= uy * jt;
+    B.vx[ba] += ux * jt * (1 - bt); B.vy[ba] += uy * jt * (1 - bt);
+    B.vx[bc] += ux * jt * bt; B.vy[bc] += uy * jt * bt;
+  }
+}
+
+// The two faces of an open slit belong to the same piece: keep them from passing through each other.
+function selfCollide(p) {
+  const cv = p.cv; if (!cv.length) return;
+  const skin = CFG.skin, X = p.x, Y = p.y;
+  const ce = p.ce, maxPen = 7;
+  for (let k = 0; k < cv.length; k += 3) {
+    const v = cv[k], lp = cv[k + 1], pos = cv[k + 2];
+    const x = X[v], y = Y[v];
+    for (let m = 0; m < ce.length; m += 4) {
+      const a = ce[m], c = ce[m + 1];
+      if (a === v || c === v) continue;
+      if (ce[m + 2] === lp) {
+        const n = p.loops[lp].length;
+        let d1 = Math.abs(pos - ce[m + 3]); d1 = Math.min(d1, n - d1);
+        let d2 = Math.abs(pos - (ce[m + 3] + 1) % n); d2 = Math.min(d2, n - d2);
+        if (d1 <= 3 || d2 <= 3) continue;
+      }
+      const ax = X[a], ay = Y[a], ex = X[c] - ax, ey = Y[c] - ay;
+      const l2 = ex * ex + ey * ey;
+      if (l2 < 1e-9) continue;
+      const t = ((x - ax) * ex + (y - ay) * ey) / l2;
+      if (t < 0 || t > 1) continue;
+      const l = Math.sqrt(l2), nx = ey / l, ny = -ex / l;
+      const d = (x - ax - ex * t) * nx + (y - ay - ey * t) * ny;
+      if (d < skin && d > -maxPen) applyContact(p, v, p, a, c, t, nx, ny, skin - d);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Grabbing                                                            */
+/* ------------------------------------------------------------------ */
+let grab = null;
+const mouse = { x: 0, y: 0, inside: false, down: false };
+
+function findPieceAt(x, y, forgive = 0) {
+  for (let i = pieces.length - 1; i >= 0; i--) if (pointInPiece(pieces[i], x, y)) return pieces[i];
+  if (forgive > 0) {
+    let best = null, bd = forgive;
+    for (const p of pieces) {
+      const b = p.bb;
+      if (x < b.x0 - forgive || x > b.x1 + forgive || y < b.y0 - forgive || y > b.y1 + forgive) continue;
+      for (const L of p.loops) for (const v of L) {
+        const d = Math.hypot(p.x[v] - x, p.y[v] - y);
+        if (d < bd) { bd = d; best = p; }
+      }
+    }
+    return best;
+  }
+  return null;
+}
+
+function startGrab(x, y) {
+  const p = findPieceAt(x, y, 18);
+  if (!p) return false;
+  const R = CFG.grabRadius, idx = [], w = [], ox = [], oy = [];
+  let nearest = -1, nd = 1e18;
+  for (let i = 0; i < p.n; i++) {
+    const d = Math.hypot(p.x[i] - x, p.y[i] - y);
+    if (d < nd) { nd = d; nearest = i; }
+  }
+  for (let i = 0; i < p.n; i++) {
+    const d = Math.hypot(p.x[i] - x, p.y[i] - y);
+    if (d < R || i === nearest) {
+      const f = Math.max(0, 1 - (d / R) * (d / R));
+      idx.push(i); w.push(Math.max(f * f, i === nearest ? 0.5 : 0)); ox.push(p.x[i] - x); oy.push(p.y[i] - y);
+    }
+  }
+  grab = { piece: p, idx, w, ox, oy, ax: x, ay: y, avx: 0, avy: 0 };
+  Sfx.squish(0.6);
+  return true;
+}
+
+function applyGrab(h) {
+  if (!grab) return;
+  const p = grab.piece;
+  const k = 1 - Math.exp(-CFG.grabRate * h);
+  const { x, y } = p;
+  // the anchor chases the pointer with a critically damped spring so the jelly is never yanked
+  const w0 = CFG.anchorRate, gx = mouse.x - grab.ax, gy = mouse.y - grab.ay;
+  grab.avx += (gx * w0 * w0 - 2 * w0 * grab.avx) * h; grab.avy += (gy * w0 * w0 - 2 * w0 * grab.avy) * h;
+  const sp = Math.hypot(grab.avx, grab.avy);
+  if (sp > CFG.anchorMaxSpeed) { grab.avx *= CFG.anchorMaxSpeed / sp; grab.avy *= CFG.anchorMaxSpeed / sp; }
+  grab.ax += grab.avx * h; grab.ay += grab.avy * h;
+  for (let j = 0; j < grab.idx.length; j++) {
+    const i = grab.idx[j];
+    let dx = grab.ax + grab.ox[j] - x[i], dy = grab.ay + grab.oy[j] - y[i];
+    const f = k * grab.w[j];
+    dx *= f; dy *= f;
+    const d = Math.hypot(dx, dy);
+    if (d > 14) { dx *= 14 / d; dy *= 14 / d; }
+    x[i] += dx; y[i] += dy;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Cutting: crack propagation through the triangle mesh                */
+/* ------------------------------------------------------------------ */
+const SMIN = 0.12;
+const SNAP = 2.2;   // entry points closer than this to a boundary vertex reuse it
+const SNAPD = 2.4;  // crack routes through a vertex lying this close to the knife line
+
+function buildTopo(P) {
+  const tri = P.tri, nt = tri.length / 3;
+  const vt = new Array(P.x.length);
+  for (let i = 0; i < vt.length; i++) vt[i] = [];
+  const em = new Map();
+  for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) {
+    const a = tri[3 * t + k], b = tri[3 * t + (k + 1) % 3];
+    vt[a].push(t);
+    const key = a < b ? a * KEYM + b : b * KEYM + a;
+    const e = em.get(key);
+    if (e) e.push(t); else em.set(key, [t]);
+  }
+  return { vt, em };
+}
+
+function addVertex(P, x, y, rx, ry, vx, vy) {
+  P.x.push(x); P.y.push(y); P.px.push(x - vx / 60); P.py.push(y - vy / 60);
+  P.vx.push(vx); P.vy.push(vy); P.rx.push(rx); P.ry.push(ry); P.uid.push(uidCounter++); P.crack.push(0); P.grp.push(0);
+  return P.x.length - 1;
+}
+
+function cloneVertex(P, v) {
+  const c = addVertex(P, P.x[v], P.y[v], P.rx[v], P.ry[v], P.vx[v], P.vy[v]);
+  if (!P.grp[v]) P.grp[v] = grpCounter++;
+  P.px[c] = P.px[v]; P.py[c] = P.py[v]; P.crack[c] = P.crack[v]; P.grp[c] = P.grp[v];
+  return c;
+}
+
+function splitEdge(P, topo, u, w, s) {
+  const key = u < w ? u * KEYM + w : w * KEYM + u;
+  const tris = topo.em.get(key);
+  const q = addVertex(P,
+    lerp(P.x[u], P.x[w], s), lerp(P.y[u], P.y[w], s),
+    lerp(P.rx[u], P.rx[w], s), lerp(P.ry[u], P.ry[w], s),
+    lerp(P.vx[u], P.vx[w], s), lerp(P.vy[u], P.vy[w], s));
+  const tri = P.tri;
+  for (const t of tris) {
+    let i = 0;
+    for (; i < 3; i++) {
+      const a = tri[3 * t + i], b = tri[3 * t + (i + 1) % 3];
+      if ((a === u && b === w) || (a === w && b === u)) break;
+    }
+    const p0 = tri[3 * t + i], p1 = tri[3 * t + (i + 1) % 3], p2 = tri[3 * t + (i + 2) % 3];
+    tri[3 * t] = p0; tri[3 * t + 1] = q; tri[3 * t + 2] = p2;
+    tri.push(q, p1, p2);
+  }
+  return q;
+}
+
+function baryOf(px, py, ax, ay, bx, by, cx, cy) {
+  const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+  if (Math.abs(d) < 1e-12) return [-1, -1, -1];
+  const l1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / d;
+  const l2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / d;
+  return [l1, l2, 1 - l1 - l2];
+}
+
+function insertInTri(P, t, x, y) {
+  const tri = P.tri, a = tri[3 * t], b = tri[3 * t + 1], c = tri[3 * t + 2];
+  let l = baryOf(x, y, P.x[a], P.y[a], P.x[b], P.y[b], P.x[c], P.y[c]);
+  const m = 0.08;
+  l = l.map(v => Math.max(v, m));
+  const s = l[0] + l[1] + l[2]; l = l.map(v => v / s);
+  const mix = arr => l[0] * arr[a] + l[1] * arr[b] + l[2] * arr[c];
+  const v = addVertex(P, mix(P.x), mix(P.y), mix(P.rx), mix(P.ry), mix(P.vx), mix(P.vy));
+  tri[3 * t] = a; tri[3 * t + 1] = b; tri[3 * t + 2] = v;
+  tri.push(b, c, v, c, a, v);
+  return v;
+}
+
+function locateTri(P, x, y) {
+  const tri = P.tri, X = P.x, Y = P.y;
+  for (let t = 0, nt = tri.length / 3; t < nt; t++) {
+    const a = tri[3 * t], b = tri[3 * t + 1], c = tri[3 * t + 2];
+    if (x < Math.min(X[a], X[b], X[c]) || x > Math.max(X[a], X[b], X[c]) || y < Math.min(Y[a], Y[b], Y[c]) || y > Math.max(Y[a], Y[b], Y[c])) continue;
+    const l = baryOf(x, y, X[a], Y[a], X[b], Y[b], X[c], Y[c]);
+    if (l[0] >= 0 && l[1] >= 0 && l[2] >= 0) return t;
+  }
+  return -1;
+}
+
+// Where does the ray from vertex `cur` (direction d, |d| = distance to the target) leave its fan?
+// Returns the fan triangle t with opposite edge (u,w), the ray parameter lam (>= 1: target lies
+// inside that triangle) and the position s along u->w.  Works for inverted / sliver triangles too.
+function rayStep(P, topo, cur, dx, dy) {
+  const tri = P.tri, X = P.x, Y = P.y, cx = X[cur], cy = Y[cur];
+  let best = null;
+  for (const t of topo.vt[cur]) {
+    let k = 0; while (tri[3 * t + k] !== cur) k++;
+    const u = tri[3 * t + (k + 1) % 3], w = tri[3 * t + (k + 2) % 3];
+    const ex = X[w] - X[u], ey = Y[w] - Y[u];
+    const den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const ux = X[u] - cx, uy = Y[u] - cy;
+    const lam = (ux * ey - uy * ex) / den, s = (ux * dy - uy * dx) / den;
+    if (lam > 1e-9 && s >= -1e-7 && s <= 1 + 1e-7 && (!best || lam < best.lam)) best = { t, u, w, lam, s };
+  }
+  return best;
+}
+
+function findEntry(P, topo, ax, ay, bx, by, tmin) {
+  const dx = bx - ax, dy = by - ay, X = P.x, Y = P.y;
+  let best = null;
+  for (const [key, ts] of topo.em) {
+    if (ts.length !== 1) continue;
+    const u = Math.floor(key / KEYM), w = key - u * KEYM;
+    const ex = X[w] - X[u], ey = Y[w] - Y[u];
+    const den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const t = ((X[u] - ax) * ey - (Y[u] - ay) * ex) / den;
+    const s = ((X[u] - ax) * dy - (Y[u] - ay) * dx) / den;
+    if (t > tmin && t <= 1 && s >= 0 && s <= 1 && (!best || t < best.t)) best = { u, w, s, t };
+  }
+  return best;
+}
+
+// Triangles around vertex v as oriented records {t, first, second} (angular order: first -> second)
+function fanInfo(P, topo, v) {
+  const tri = P.tri, info = [], byFirst = new Map(), seconds = new Set();
+  for (const t of topo.vt[v]) {
+    let k = 0; while (tri[3 * t + k] !== v) k++;
+    const e = { t, first: tri[3 * t + (k + 1) % 3], second: tri[3 * t + (k + 2) % 3] };
+    info.push(e); byFirst.set(e.first, e); seconds.add(e.second);
+  }
+  const start = info.find(e => !seconds.has(e.first)) || null; // null => closed fan
+  return { info, byFirst, start };
+}
+
+// Split the fan of vertex v along a crack that arrives from Pv and leaves towards Nv
+// (null = the crack edge is the gap of an open fan, i.e. v sits on the boundary).
+// Returns lists of triangle ids; every list becomes one copy of v.  The first list is the
+// wedge that runs counter-clockwise from the outgoing edge to the incoming one ("A" side).
+function fanSegments(P, topo, v, Pv, Nv) {
+  const f = fanInfo(P, topo, v);
+  const visited = new Set(), chains = [];
+  const walk = (e0, closed) => {
+    const ch = []; let e = e0;
+    while (e && !visited.has(e)) { visited.add(e); ch.push(e); e = f.byFirst.get(e.second); if (closed && e === e0) break; }
+    chains.push({ ch, closed });
+  };
+  const seconds = new Set(f.info.map(e => e.second));
+  for (const e of f.info) if (!seconds.has(e.first)) walk(e, false);
+  for (const e of f.info) if (!visited.has(e)) walk(e, true);
+  const segs = [];
+  for (const { ch, closed } of chains) {
+    // positions where the fan is cut: before entry i
+    const cut = new Array(ch.length).fill(false);
+    for (let i = 0; i < ch.length; i++) {
+      if (Nv !== null && ch[i].first === Nv) cut[i] = true;
+      if (Pv !== null && ch[i].second === Pv) cut[(i + 1) % ch.length] = true;
+    }
+    let startIdx = 0;
+    if (closed) { startIdx = cut.indexOf(true); if (startIdx < 0) { segs.push(ch.map(e => e.t)); continue; } }
+    else cut[0] = true;
+    let cur = null;
+    for (let k = 0; k < ch.length; k++) {
+      const i = (startIdx + k) % ch.length;
+      if (cut[i] || !cur) { cur = []; segs.push(cur); }
+      cur.push(ch[i].t);
+    }
+  }
+  // put the A wedge first
+  let ai = 0;
+  if (Nv !== null) { const e = f.byFirst.get(Nv); if (e) ai = Math.max(0, segs.findIndex(sg => sg.includes(e.t) && sg[0] === e.t)); }
+  else { const st = f.start; if (st) ai = Math.max(0, segs.findIndex(sg => sg[0] === st.t)); }
+  if (ai > 0) { const t = segs[ai]; segs.splice(ai, 1); segs.unshift(t); }
+  return segs;
+}
+
+// Fallback for degenerate geometry: cut along existing mesh edges from `from` to the boundary vertex
+// nearest to the target (bx,by), never moving backwards.  Returns the vertex path without `from`.
+function edgePathExit(P, topo, from, bx, by, avoid) {
+  const X = P.x, Y = P.y, n = X.length;
+  const dx = bx - X[from], dy = by - Y[from], dl = Math.hypot(dx, dy) || 1, ux = dx / dl, uy = dy / dl;
+  const adj = new Array(n);
+  for (let i = 0; i < n; i++) adj[i] = [];
+  for (const key of topo.em.keys()) { const u = Math.floor(key / KEYM), w = key - u * KEYM; adj[u].push(w); adj[w].push(u); }
+  const proj = v => (X[v] - X[from]) * ux + (Y[v] - Y[from]) * uy;
+  const perp = (x, y) => Math.abs((x - X[from]) * uy - (y - Y[from]) * ux);
+  const dist = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), done = new Uint8Array(n);
+  dist[from] = 0;
+  const isBoundary = v => topo.vt[v].length > 0 && !!fanInfo(P, topo, v).start;
+  let goal = -1, goalScore = Infinity;
+  for (;;) {
+    let u = -1, best = Infinity;
+    for (let i = 0; i < n; i++) if (!done[i] && dist[i] < best) { best = dist[i]; u = i; }
+    if (u < 0) break;
+    done[u] = 1;
+    if (u !== from && isBoundary(u)) {
+      const sc = Math.hypot(bx - X[u], by - Y[u]);
+      if (sc < goalScore) { goalScore = sc; goal = u; }
+      continue;                       // a path may not run through a boundary vertex
+    }
+    for (const w of adj[u]) {
+      if (done[w] || avoid.has(w) || proj(w) < -3) continue;
+      const cost = Math.hypot(X[w] - X[u], Y[w] - Y[u]) * (1 + (perp((X[w] + X[u]) / 2, (Y[w] + Y[u]) / 2) / 6) ** 2);
+      if (dist[u] + cost < dist[w]) { dist[w] = dist[u] + cost; prev[w] = u; }
+    }
+  }
+  if (goal < 0) return null;
+  const path = [];
+  for (let v = goal; v !== from && v >= 0; v = prev[v]) path.push(v);
+  return path.reverse();
+}
+
+// Returns { changed, tipUid }
+function cutPiece(P, ax, ay, bx, by, tipIdx, kick, fromOutside) {
+  let topo = buildTopo(P);
+  const runs = [];
+  let run = null, cur = -1, t = 0, tipOut = -1, changed = false, done = false;
+  const X = P.x, Y = P.y;
+  const endTip = () => { run.end = 'tip'; if (run.v.length >= 2) runs.push(run); tipOut = cur; done = true; };
+
+  if (tipIdx >= 0) {
+    cur = tipIdx;
+    run = { v: [cur], start: fanInfo(P, topo, cur).start ? 'tipOld' : 'tip', end: null };
+  } else {
+    const t0 = locateTri(P, ax, ay);
+    if (t0 >= 0) {
+      // The knife came from outside but the jelly moved onto it: start the crack at the boundary it crossed.
+      let ext = null;
+      if (fromOutside) {
+        const dl = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / dl, uy = (by - ay) / dl;
+        ext = findEntry(P, topo, ax, ay, ax - ux * 40, ay - uy * 40, 0);
+        if (ext) { const back = ext.t * 40 + 1; ax -= ux * back; ay -= uy * back; }
+      }
+      if (!ext) {
+        cur = insertInTri(P, t0, ax, ay); topo = buildTopo(P); changed = true;
+        run = { v: [cur], start: 'tip', end: null };
+      }
+    }
+  }
+  const sx = bx - ax, sy = by - ay, sl2 = sx * sx + sy * sy;
+  const tOf = q => ((X[q] - ax) * sx + (Y[q] - ay) * sy) / (sl2 || 1);
+
+  let iters = 0;
+  for (let guard = 0; guard < 4000 && !done; guard++) {
+    iters = guard;
+    if (CFG.trace && guard < 70) CFG.trace.push(`g${guard} cur=${cur} t=${t.toFixed(3)} runlen=${run ? run.v.length : '-'} pos=${cur >= 0 ? X[cur].toFixed(1) + ',' + Y[cur].toFixed(1) : '-'}`);
+    if (cur < 0) {
+      const e = findEntry(P, topo, ax, ay, bx, by, t);
+      if (!e) break;
+      const el = Math.hypot(X[e.w] - X[e.u], Y[e.w] - Y[e.u]);
+      let q;
+      if (e.s * el < SNAP) q = e.u; else if ((1 - e.s) * el < SNAP) q = e.w;
+      else { q = splitEdge(P, topo, e.u, e.w, clamp(e.s, SMIN, 1 - SMIN)); topo = buildTopo(P); changed = true; }
+      run = { v: [q], start: 'boundary', end: null }; cur = q; t = e.t;
+      continue;
+    }
+    const cx = X[cur], cy = Y[cur], dx = bx - cx, dy = by - cy;
+    if (dx * dx + dy * dy < 1e-3) { if (CFG.trace) CFG.trace.push('end: at B'); endTip(); break; }
+    const hit = rayStep(P, topo, cur, dx, dy);
+    if (!hit) {
+      if (run.start === 'boundary' && run.v.length === 1) { t = Math.max(t, tOf(cur)) + 1e-3; cur = -1; run = null; continue; }
+      if (locateTri(P, bx, by) < 0) {                       // knife is outside: finish the cut along mesh edges
+        const path = edgePathExit(P, topo, cur, bx, by, new Set(run.v));
+        if (path && path.length) {
+          if (CFG.trace) CFG.trace.push('edge-path exit ' + path.join(','));
+          run.v.push(...path); run.end = 'boundary'; runs.push(run); run = null; cur = -1; changed = true; done = true; break;
+        }
+      }
+      if (CFG.trace) CFG.trace.push('end: ray leaves the fan cur=' + cur); endTip(); break;
+    }
+    const u = hit.u, w = hit.w;
+    if (hit.lam >= 1 - 1e-9) { if (CFG.trace) CFG.trace.push('end: B inside fan triangle'); endTip(); break; }   // knife tip is inside this triangle: crack waits at its entry
+    // ray passes (almost) through a vertex of the opposite edge: route the crack through it
+    {
+      const rl = Math.hypot(dx, dy), ux = dx / rl, uy = dy / rl;
+      const perp = v => Math.abs((X[v] - cx) * uy - (Y[v] - cy) * ux);
+      const fwd = v => (X[v] - cx) * ux + (Y[v] - cy) * uy;
+      const pu = perp(u), pw = perp(w);
+      let sn = -1;
+      if (pu < SNAPD && fwd(u) > 0.5 && fwd(u) <= rl + 1 && pu <= pw) sn = u;
+      else if (pw < SNAPD && fwd(w) > 0.5 && fwd(w) <= rl + 1) sn = w;
+      if (sn >= 0 && (Math.hypot(bx - X[sn], by - Y[sn]) > rl - 1e-3 || run.v.includes(sn))) sn = -2;
+      if (sn === -2) { if (CFG.trace) CFG.trace.push('end: snap no progress'); endTip(); break; }
+      if (sn >= 0) {
+        run.v.push(sn); changed = true;
+        if (fanInfo(P, topo, sn).start) { run.end = 'boundary'; runs.push(run); run = null; cur = -1; t = Math.max(t, tOf(sn)) + 1e-3; }
+        else cur = sn;
+        continue;
+      }
+    }
+    // crossing with the opposite edge
+    const s = clamp(hit.s, SMIN, 1 - SMIN);
+    const key = u < w ? u * KEYM + w : w * KEYM + u;
+    const isBoundary = topo.em.get(key).length === 1;
+    {
+      const qx = lerp(X[u], X[w], s), qy = lerp(Y[u], Y[w], s);
+      if (Math.hypot(bx - qx, by - qy) > Math.hypot(dx, dy) - 1e-3) { if (CFG.trace) CFG.trace.push('end: backwards'); endTip(); break; }   // never step backwards
+    }
+    const q = splitEdge(P, topo, u, w, s);
+    topo = buildTopo(P); changed = true;
+    run.v.push(q);
+    if (isBoundary) {
+      run.end = 'boundary'; runs.push(run); run = null; cur = -1; t = Math.max(t, tOf(q)) + 1e-3;
+    } else cur = q;
+  }
+  if (run && cur >= 0 && !done) endTip();
+
+  // a path that grazes a boundary vertex exits and re-enters at the same vertex: make it one run
+  for (let i = 0; i + 1 < runs.length; i++) {
+    const a = runs[i], b = runs[i + 1];
+    if (a.end === 'boundary' && b.start === 'boundary' && a.v[a.v.length - 1] === b.v[0]) {
+      a.v.push(...b.v.slice(1)); a.end = b.end; runs.splice(i + 1, 1); i--;
+    }
+  }
+  if (CFG.trace) for (const r of runs) CFG.trace.push(`run ${r.start}->${r.end} [${r.v.join(',')}]`);
+  if (CFG.runLog) CFG.runLog.push(`seg ${ax.toFixed(1)},${ay.toFixed(1)}>${bx.toFixed(1)},${by.toFixed(1)} tipIdx=${tipIdx} ` + runs.map(r => `${r.start}->${r.end}(${r.v.length})`).join(' ') + ` tipOut=${tipOut}`);
+  // ---- open the crack: duplicate vertices along each run; sides are decided topologically
+  const topo2 = buildTopo(P);
+  const jobs = [];
+  for (const r of runs) {
+    const V = r.v, m = V.length;
+    for (let i = 0; i < m; i++) {
+      const first = i === 0, last = i === m - 1;
+      if ((first && r.start === 'tip') || (last && r.end === 'tip')) continue;
+      const Pv = first ? null : V[i - 1], Nv = last ? null : V[i + 1];
+      jobs.push({ v: V[i], segs: fanSegments(P, topo2, V[i], Pv, Nv), Pv, Nv });
+    }
+  }
+  for (const r of runs) for (const v of r.v) P.crack[v] = 1;
+  const moves = [];
+  for (const j of jobs) {
+    const v = j.v;
+    let onx, ony;
+    if (j.Nv !== null) { onx = X[j.Nv] - X[v]; ony = Y[j.Nv] - Y[v]; }
+    else { onx = X[v] - X[j.Pv]; ony = Y[v] - Y[j.Pv]; }
+    const clones = [];
+    for (let k = 1; k < j.segs.length; k++) {
+      const clone = cloneVertex(P, v); clones.push(clone);
+      for (const t of j.segs[k]) for (let q = 0; q < 3; q++) if (P.tri[3 * t + q] === v) P.tri[3 * t + q] = clone;
+    }
+    const ol = Math.hypot(onx, ony) || 1;
+    moves.push({ v, clones, nx: -ony / ol, ny: onx / ol });
+  }
+  // open the slit a little (knife thickness), unless that would fold a triangle
+  if (moves.length) {
+    const g = CFG.cutGap * 0.5;
+    const touched = new Map();
+    for (const m of moves) { touched.set(m.v, m); for (const c of m.clones) touched.set(c, m); }
+    const areaOf = t => triArea(X, Y, P.tri[3 * t], P.tri[3 * t + 1], P.tri[3 * t + 2]);
+    const tl = [];
+    for (let t = 0, nt = P.tri.length / 3; t < nt; t++) {
+      if (touched.has(P.tri[3 * t]) || touched.has(P.tri[3 * t + 1]) || touched.has(P.tri[3 * t + 2])) tl.push(t);
+    }
+    const before = tl.map(areaOf);
+    const shift = (m, sgn) => {
+      X[m.v] += m.nx * g * sgn; Y[m.v] += m.ny * g * sgn;
+      for (const c of m.clones) { X[c] -= m.nx * g * sgn; Y[c] -= m.ny * g * sgn; }
+    };
+    for (const m of moves) shift(m, 1);
+    tl.forEach((t, i) => {
+      if (before[i] > 0.5 && areaOf(t) < before[i] * 0.35) {
+        for (let k = 0; k < 3; k++) { const m = touched.get(P.tri[3 * t + k]); if (m) m.revert = true; }
+      }
+    });
+    for (const m of moves) {
+      if (m.revert) { shift(m, -1); continue; }
+      P.px[m.v] += m.nx * g; P.py[m.v] += m.ny * g; P.vx[m.v] += m.nx * kick; P.vy[m.v] += m.ny * kick;
+      for (const c of m.clones) { P.px[c] -= m.nx * g; P.py[c] -= m.ny * g; P.vx[c] -= m.nx * kick; P.vy[c] -= m.ny * kick; }
+    }
+  }
+  return { changed, iters, tipUid: tipOut >= 0 ? P.uid[tipOut] : -1, cracked: runs.length > 0, crackLen: runs.reduce((s, r) => {
+    let l = 0; for (let i = 1; i < r.v.length; i++) l += Math.hypot(X[r.v[i]] - X[r.v[i - 1]], Y[r.v[i]] - Y[r.v[i - 1]]); return s + l; }, 0) };
+}
+
+// split an edited mesh into independent pieces
+function finalizePieces(P) {
+  const nv = P.x.length, nt = P.tri.length / 3;
+  const par = new Int32Array(nv); for (let i = 0; i < nv; i++) par[i] = i;
+  const find = i => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+  const tri = P.tri;
+  for (let t = 0; t < nt; t++) {
+    const a = find(tri[3 * t]), b = find(tri[3 * t + 1]), c = find(tri[3 * t + 2]);
+    par[b] = a; par[find(c)] = find(a);
+  }
+  const groups = new Map();
+  for (let t = 0; t < nt; t++) { const r = find(tri[3 * t]); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(t); }
+  const out = [];
+  for (const ts of groups.values()) {
+    const map = new Map(), idxs = [];
+    const flat = [];
+    for (const t of ts) for (let k = 0; k < 3; k++) {
+      const v = tri[3 * t + k];
+      if (!map.has(v)) { map.set(v, idxs.length); idxs.push(v); }
+      flat.push(map.get(v));
+    }
+    const pick = arr => idxs.map(v => arr[v]);
+    const np = makePiece({
+      x: pick(P.x), y: pick(P.y), px: pick(P.px), py: pick(P.py), vx: pick(P.vx), vy: pick(P.vy),
+      rx: pick(P.rx), ry: pick(P.ry), uid: pick(P.uid), tri: flat, crack: pick(P.crack), grp: pick(P.grp),
+    }, { hue: P.hue, sat: P.sat });
+    np.lastThud = P.lastThud;
+    if (np.area >= CFG.minPieceArea) out.push(np);
+  }
+  return out;
+}
+
+function segTouchesPiece(p, ax, ay, bx, by) {
+  const b = p.bb, m = 3;
+  if (Math.max(ax, bx) < b.x0 - m || Math.min(ax, bx) > b.x1 + m || Math.max(ay, by) < b.y0 - m || Math.min(ay, by) > b.y1 + m) return false;
+  if (pointInPiece(p, ax, ay) || pointInPiece(p, bx, by)) return true;
+  const X = p.x, Y = p.y, dx = bx - ax, dy = by - ay;
+  for (const L of p.loops) for (let i = 0, j = L.length - 1; i < L.length; j = i++) {
+    const u = L[j], w = L[i];
+    const ex = X[w] - X[u], ey = Y[w] - Y[u];
+    const den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const t = ((X[u] - ax) * ey - (Y[u] - ay) * ex) / den;
+    const s = ((X[u] - ax) * dy - (Y[u] - ay) * dx) / den;
+    if (t >= 0 && t <= 1 && s >= 0 && s <= 1) return true;
+  }
+  return false;
+}
+
+// Cut all pieces along the segment a->b. Returns info about what happened.
+function cutSegment(ax, ay, bx, by, speed = 0) {
+  const info = { cracked: false, split: false, len: 0 };
+  if ((bx - ax) ** 2 + (by - ay) ** 2 < 0.04) return info;
+  const kick = clamp(speed * 0.02, 4, 40);
+  let tipNext = -1;
+  const next = [];
+  for (const p of pieces) {
+    let tipIdx = -1;
+    if (knife.tipUid >= 0) { const i = p.uid.indexOf(knife.tipUid); if (i >= 0) tipIdx = i; }
+    if (tipIdx < 0 && !segTouchesPiece(p, ax, ay, bx, by)) { next.push(p); continue; }
+    const P = { ...p, x: p.x.slice(), y: p.y.slice(), px: p.px.slice(), py: p.py.slice(), vx: p.vx.slice(), vy: p.vy.slice(),
+      rx: p.rx.slice(), ry: p.ry.slice(), uid: p.uid.slice(), tri: Array.from(p.tri), crack: p.crack.slice(), grp: p.grp.slice() };
+    const r = cutPiece(P, ax, ay, bx, by, tipIdx, kick, knife.fromOutside);
+    info.iters = Math.max(info.iters || 0, r.iters);
+    if (!r.changed) { next.push(p); if (r.tipUid >= 0) tipNext = r.tipUid; continue; }
+    if (r.tipUid >= 0) tipNext = r.tipUid;
+    if (r.cracked) info.cracked = true;
+    info.len += r.crackLen;
+    const parts = finalizePieces(P);
+    if (grab && grab.piece === p) grab = null;
+    if (parts.length > 1) info.split = true;
+    if (parts.length > 1) {
+      // gentle separation between the new halves
+      let cx = 0, cy = 0, cnt = 0;
+      for (let i = 0; i < p.n; i++) { cx += p.x[i]; cy += p.y[i]; cnt++; }
+      cx /= cnt; cy /= cnt;
+      for (const np of parts) {
+        let mx = 0, my = 0; for (let i = 0; i < np.n; i++) { mx += np.x[i]; my += np.y[i]; }
+        mx /= np.n; my /= np.n;
+        const dx = mx - cx, dy = my - cy, l = Math.hypot(dx, dy) || 1;
+        const k = 14;
+        for (let i = 0; i < np.n; i++) { np.vx[i] += dx / l * k; np.vy[i] += dy / l * k * 0.3; }
+      }
+    }
+    for (const np of parts) next.push(np);
+  }
+  pieces = next;
+  knife.tipUid = tipNext;
+  if (info.cracked) updateCount();
+  return info;
+}
+
+/* ------------------------------------------------------------------ */
+/* Knife input state                                                   */
+/* ------------------------------------------------------------------ */
+const knife = {
+  active: false, fromOutside: true, tipUid: -1, x: 0, y: 0, lastX: 0, lastY: 0, angle: Math.PI * 0.62, speed: 0,
+  queue: [], hover: false, cutting: 0,
+};
+let tool = 'grab';
+
+function processKnife(dt) {
+  let cutInfo = null, moved = 0;
+  if (knife.queue.length) {
+    const q = knife.queue; knife.queue = [];
+    let step = 1;
+    if (q.length > 80) step = Math.ceil(q.length / 80);
+    for (let i = 0; i < q.length; i += step) {
+      const s = q[i];
+      const len = Math.hypot(s.bx - s.ax, s.by - s.ay);
+      moved += len * step;
+      const info = cutSegment(s.ax, s.ay, s.bx, s.by, len / Math.max(dt, 1 / 240));
+      if (info.cracked) { cutInfo = cutInfo || { len: 0, split: false }; cutInfo.len += info.len; cutInfo.split = cutInfo.split || info.split; }
+    }
+  }
+  // the slice is audible while the blade moves through jelly (a crack is open or just grew)
+  const inJelly = cutInfo || knife.tipUid >= 0;
+  if (inJelly && moved > 0) {
+    if (knife.cutting < 0.05) Sfx.snip();
+    knife.cutting = 1;
+    Sfx.cutting(clamp(moved / dt / 1100, 0.12, 1));
+  } else {
+    knife.cutting = Math.max(0, knife.cutting - dt * 6);
+    Sfx.cutting(0);
+  }
+  if (cutInfo && cutInfo.split) Sfx.plop(0.8);
+}
+
+/* ------------------------------------------------------------------ */
+/* Audio (all procedural)                                              */
+/* ------------------------------------------------------------------ */
+const Sfx = (() => {
+  let ac = null, master, noiseBuf, muted = false;
+  let cutG, cutBP, rustG, rustBP, wetG;
+  function init() {
+    if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+    try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; return; }
+    master = ac.createGain(); master.gain.value = muted ? 0 : 0.9;
+    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
+    master.connect(comp); comp.connect(ac.destination);
+    // pink-ish noise buffer
+    const len = ac.sampleRate * 3; noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852;
+      b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
+      d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11; b6 = w * 0.115926;
+    }
+    const loopSrc = (freq, q, type) => {
+      const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+      s.loopStart = Math.random(); const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+      const g = ac.createGain(); g.gain.value = 0;
+      s.connect(f); f.connect(g); g.connect(master); s.start(0, Math.random() * 2);
+      return { g, f };
+    };
+    const c = loopSrc(2600, 0.7, 'bandpass'); cutG = c.g; cutBP = c.f;
+    const r = loopSrc(650, 0.5, 'bandpass'); rustG = r.g; rustBP = r.f;
+    const w = loopSrc(380, 0.6, 'lowpass'); wetG = w.g;
+  }
+  const noiseBurst = (t0, dur, freq, q, type, gain, sweepTo) => {
+    const s = ac.createBufferSource(); s.buffer = noiseBuf;
+    const f = ac.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(freq, t0); f.Q.value = q;
+    if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t0 + dur);
+    const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain, t0 + Math.min(0.012, dur * 0.3));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    s.connect(f); f.connect(g); g.connect(master); s.start(t0, Math.random() * 2, dur + 0.05);
+  };
+  const tone = (t0, f0, f1, dur, gain, type = 'sine') => {
+    const o = ac.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0, t0);
+    o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+    const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain, t0 + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.05);
+  };
+  return {
+    init,
+    get muted() { return muted; },
+    setMuted(m) { muted = m; if (master) master.gain.setTargetAtTime(m ? 0 : 0.9, ac.currentTime, 0.02); },
+    cutting(v) {
+      if (!ac) return;
+      const t = ac.currentTime;
+      // a little random flutter makes the slice sound like gel parting rather than a steady hiss
+      cutG.gain.setTargetAtTime(v * 0.3 * (0.72 + Math.random() * 0.56), t, v > 0 ? 0.015 : 0.06);
+      cutBP.frequency.setTargetAtTime(1000 + v * 1900 + Math.random() * 350, t, 0.03);
+      wetG.gain.setTargetAtTime(v * 0.22 * (0.6 + Math.random() * 0.8), t, 0.02);
+    },
+    snip() {
+      if (!ac) return; const t = ac.currentTime;
+      noiseBurst(t, 0.05, 4200, 1.4, 'highpass', 0.14);
+      tone(t, 520, 210, 0.07, 0.06, 'triangle');
+    },
+    rustle(v) {
+      if (!ac) return;
+      const t = ac.currentTime;
+      rustG.gain.setTargetAtTime(clamp(v, 0, 1) * 0.16, t, 0.04);
+      rustBP.frequency.setTargetAtTime(420 + v * 700, t, 0.05);
+    },
+    thud(s) {
+      if (!ac) return; s = clamp(s, 0.05, 1); const t = ac.currentTime;
+      tone(t, 150 + s * 40, 48, 0.22, 0.5 * s);
+      noiseBurst(t, 0.09, 380, 0.7, 'lowpass', 0.32 * s);
+      tone(t + 0.02, 230, 90, 0.14, 0.12 * s, 'triangle');
+    },
+    plop(s) {
+      if (!ac) return; s = clamp(s, 0.05, 1); const t = ac.currentTime;
+      tone(t, 420, 130, 0.14, 0.22 * s);
+      noiseBurst(t, 0.1, 900, 1.2, 'bandpass', 0.2 * s, 300);
+    },
+    squish(s) {
+      if (!ac) return; s = clamp(s, 0.05, 1); const t = ac.currentTime;
+      noiseBurst(t, 0.16, 500, 2.2, 'bandpass', 0.24 * s, 1500);
+    },
+  };
+})();
+
+/* ------------------------------------------------------------------ */
+/* Rendering                                                           */
+/* ------------------------------------------------------------------ */
+let quality = 1;
+
+function renderBackground() {
+  const dpr = world.dpr, vs = world.vs;
+  bgCanvas = document.createElement('canvas');
+  bgCanvas.width = canvas.width; bgCanvas.height = canvas.height;
+  const g = bgCanvas.getContext('2d');
+  g.setTransform(dpr * vs, 0, 0, dpr * vs, 0, 0);
+  const W = world.W, H = world.H, fl = world.floor;
+  const horizon = fl - 130;
+  // wall
+  let gr = g.createLinearGradient(0, 0, 0, horizon);
+  gr.addColorStop(0, '#f3dcf3'); gr.addColorStop(1, '#fde9ef');
+  g.fillStyle = gr; g.fillRect(0, 0, W, horizon + 2);
+  gr = g.createRadialGradient(W * 0.5, horizon * 0.55, 10, W * 0.5, horizon * 0.55, Math.max(W, H) * 0.7);
+  gr.addColorStop(0, 'rgba(255,255,255,.65)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, W, horizon);
+  // table
+  gr = g.createLinearGradient(0, horizon, 0, H);
+  gr.addColorStop(0, '#f4dcc8'); gr.addColorStop(0.5, '#f8e6d6'); gr.addColorStop(1, '#eccfb8');
+  g.fillStyle = gr; g.fillRect(0, horizon, W, H - horizon);
+  // subtle wood grain
+  g.globalAlpha = 0.05; g.strokeStyle = '#8a5a44';
+  for (let i = 0; i < 46; i++) {
+    const y = horizon + 8 + ((i * 47.3) % (H - horizon));
+    g.lineWidth = 0.6 + (i % 3) * 0.5; g.beginPath();
+    g.moveTo(0, y);
+    for (let x = 0; x <= W + 60; x += 60) g.lineTo(x, y + Math.sin(x * 0.011 + i * 1.7) * 3);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+  // table back edge shadow
+  gr = g.createLinearGradient(0, horizon, 0, horizon + 26);
+  gr.addColorStop(0, 'rgba(120,70,90,.20)'); gr.addColorStop(1, 'rgba(120,70,90,0)');
+  g.fillStyle = gr; g.fillRect(0, horizon, W, 26);
+  // plate
+  const cx = W / 2, cy = fl - 24, rx = clamp(W * 0.4, 260, 560), ry = 78;
+  g.save();
+  g.filter = HAS_FILTER ? 'blur(14px)' : 'none';
+  g.fillStyle = 'rgba(96,52,72,.30)';
+  g.beginPath(); g.ellipse(cx + 10, cy + 26, rx * 1.02, ry * 1.02, 0, 0, TAU); g.fill();
+  g.restore();
+  g.fillStyle = '#d9d2df';
+  g.beginPath(); g.ellipse(cx, cy + 9, rx, ry, 0, 0, TAU); g.fill();
+  gr = g.createLinearGradient(0, cy - ry, 0, cy + ry);
+  gr.addColorStop(0, '#ffffff'); gr.addColorStop(1, '#ece7f2');
+  g.fillStyle = gr;
+  g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, TAU); g.fill();
+  gr = g.createLinearGradient(0, cy - ry * 0.8, 0, cy + ry * 0.8);
+  gr.addColorStop(0, '#eee9f4'); gr.addColorStop(1, '#fbf9fe');
+  g.fillStyle = gr;
+  g.beginPath(); g.ellipse(cx, cy + 2, rx * 0.8, ry * 0.76, 0, 0, TAU); g.fill();
+  g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 2;
+  g.beginPath(); g.ellipse(cx, cy - 1, rx * 0.985, ry * 0.985, 0, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
+}
+
+function loopPath(p, out) {
+  const X = p.x, Y = p.y;
+  for (const L of p.loops) {
+    const n = L.length;
+    let x0 = (X[L[n - 1]] + X[L[0]]) / 2, y0 = (Y[L[n - 1]] + Y[L[0]]) / 2;
+    out.moveTo(x0, y0);
+    for (let i = 0; i < n; i++) {
+      const a = L[i], b = L[(i + 1) % n];
+      out.quadraticCurveTo(X[a], Y[a], (X[a] + X[b]) / 2, (Y[a] + Y[b]) / 2);
+    }
+    out.closePath();
+  }
+}
+
+function taperedStreak(p, wMax) {
+  const hl = p.hl; if (!hl || hl.length < 3) return null;
+  const pts = hl.map(h => [h.l[0] * p.x[h.a] + h.l[1] * p.x[h.b] + h.l[2] * p.x[h.c], h.l[0] * p.y[h.a] + h.l[1] * p.y[h.b] + h.l[2] * p.y[h.c]]);
+  const n = pts.length, L = [], R = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+    let tx = b[0] - a[0], ty = b[1] - a[1]; const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
+    const w = wMax * Math.pow(Math.sin(Math.PI * (i + 0.5) / n), 0.7) * 0.5;
+    L.push([pts[i][0] - ty * w, pts[i][1] + tx * w]); R.push([pts[i][0] + ty * w, pts[i][1] - tx * w]);
+  }
+  const path = new Path2D();
+  path.moveTo(L[0][0], L[0][1]);
+  for (let i = 1; i < n; i++) path.lineTo(L[i][0], L[i][1]);
+  for (let i = n - 1; i >= 0; i--) path.lineTo(R[i][0], R[i][1]);
+  path.closePath();
+  return path;
+}
+
+function drawPiece(p) {
+  const h = p.hue, s = p.sat, bb = p.bb;
+  const w = bb.x1 - bb.x0, hgt = bb.y1 - bb.y0;
+  if (!(w > 0) || !p.loops.length) return;
+  const path = new Path2D();
+  loopPath(p, path);
+  const depth = 15, layers = quality > 0 ? 8 : 3;
+
+  // contact shadow + colored glow on the plate
+  {
+    const lift = Math.max(0, world.floor - bb.y1);
+    const a = 0.34 * Math.exp(-lift / 260);
+    const cx = (bb.x0 + bb.x1) / 2 + 8, rx = w * 0.56 + 10, cy = world.floor + 4;
+    ctx.save();
+    ctx.translate(cx, cy); ctx.scale(1, 0.13);
+    let gr = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    gr.addColorStop(0, `rgba(70,30,55,${a})`); gr.addColorStop(0.65, `rgba(70,30,55,${a * 0.55})`); gr.addColorStop(1, 'rgba(70,30,55,0)');
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, rx, 0, TAU); ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.translate(cx + 6, cy + 6); ctx.scale(1, 0.16);
+    const rr = w * 0.5 + 8;
+    ctx.globalAlpha = 0.55 * Math.exp(-lift / 200);
+    gr = ctx.createRadialGradient(0, 0, 0, 0, 0, rr);
+    gr.addColorStop(0, hsl(h, s, 60, 0.7)); gr.addColorStop(1, hsl(h, s, 60, 0));
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+
+  // top / back face (extrusion upward)
+  ctx.save();
+  let gr = ctx.createLinearGradient(0, bb.y0 - depth, 0, bb.y0 + hgt * 0.4);
+  gr.addColorStop(0, hsl(h, s, 84)); gr.addColorStop(1, hsl(h, s, 66));
+  ctx.fillStyle = gr;
+  for (let k = layers; k >= 1; k--) {
+    ctx.save(); ctx.translate(0, -depth * k / layers); ctx.fill(path); ctx.restore();
+  }
+  ctx.restore();
+
+  // front face
+  ctx.save();
+  gr = ctx.createLinearGradient(0, bb.y0, 0, bb.y1);
+  gr.addColorStop(0, hsl(h, s, 66, 0.93)); gr.addColorStop(0.45, hsl(h, s, 55, 0.94)); gr.addColorStop(1, hsl(h, s, 42, 0.96));
+  ctx.fillStyle = gr; ctx.fill(path);
+  ctx.clip(path);
+
+  // subsurface glow (light travelling through the gel)
+  gr = ctx.createRadialGradient(bb.x0 + w * 0.38, bb.y0 + hgt * 0.34, 2, bb.x0 + w * 0.5, bb.y0 + hgt * 0.5, Math.max(w, hgt) * 0.75);
+  gr.addColorStop(0, hsl(h, 100, 84, 0.55)); gr.addColorStop(0.55, hsl(h, 100, 70, 0.14)); gr.addColorStop(1, hsl(h, 100, 60, 0));
+  ctx.fillStyle = gr; ctx.fillRect(bb.x0 - 4, bb.y0 - 4, w + 8, hgt + 8);
+
+  // tiny air bubbles trapped in the gel (they wobble with it)
+  if (p.bub.length) {
+    const X = p.x, Y = p.y;
+    for (const bu of p.bub) {
+      const bx = bu.l[0] * X[bu.a] + bu.l[1] * X[bu.b] + bu.l[2] * X[bu.c], by = bu.l[0] * Y[bu.a] + bu.l[1] * Y[bu.b] + bu.l[2] * Y[bu.c];
+      ctx.fillStyle = hsl(h, 100, 86, 0.22); ctx.beginPath(); ctx.arc(bx, by, bu.r, 0, TAU); ctx.fill();
+      ctx.strokeStyle = hsl(h, 100, 92, 0.45); ctx.lineWidth = 0.7; ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(bx - bu.r * 0.32, by - bu.r * 0.34, Math.max(0.5, bu.r * 0.26), 0, TAU); ctx.fill();
+    }
+  }
+
+  // deeper colour toward the edges (more gel to look through)
+  ctx.save();
+  if (HAS_FILTER && quality > 0) ctx.filter = 'blur(9px)';
+  ctx.strokeStyle = hsl(h, Math.min(100, s + 4), 28, 0.5); ctx.lineWidth = 22; ctx.lineJoin = 'round';
+  ctx.stroke(path);
+  ctx.restore();
+
+  // caustic-ish bright band at the bottom (light gathering on the plate side)
+  ctx.save();
+  if (HAS_FILTER && quality > 0) ctx.filter = 'blur(6px)';
+  ctx.translate(0, -7);
+  ctx.strokeStyle = hsl(h, 100, 78, 0.28); ctx.lineWidth = 5;
+  ctx.stroke(path);
+  ctx.restore();
+
+  // glossy rim highlight: region of the shape not covered by an offset copy
+  const rect = new Path2D(); rect.rect(bb.x0 - 30, bb.y0 - 30, w + 60, hgt + 60);
+  const off = (dx, dy) => { const c = new Path2D(); c.addPath(rect); c.addPath(path, new DOMMatrix().translate(dx, dy)); return c; };
+  ctx.save();
+  if (HAS_FILTER && quality > 0) ctx.filter = 'blur(2.5px)';
+  ctx.fillStyle = 'rgba(255,255,255,0.62)';
+  ctx.fill(off(7, 9), 'evenodd');
+  ctx.fillStyle = hsl(h, 100, 88, 0.2);
+  ctx.fill(off(-6, -8), 'evenodd');
+  ctx.restore();
+
+  // wobbling specular streak
+  const streak = taperedStreak(p, Math.min(11, 4 + w * 0.02));
+  if (streak) {
+    ctx.save();
+    if (HAS_FILTER && quality > 0) ctx.filter = 'blur(1.6px)';
+    ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.fill(streak);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // wet outline
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = hsl(h, s, 30, 0.45); ctx.lineWidth = 1.4; ctx.stroke(path);
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 0.8;
+  ctx.save(); ctx.translate(0, 0.8); ctx.stroke(path); ctx.restore();
+  ctx.restore();
+}
+
+function drawKnife() {
+  const k = knife;
+  if (tool !== 'knife' && !k.active) return;
+  if (!mouse.inside && !k.active) return;
+  const x = mouse.x, y = mouse.y;
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(k.angle);
+  const sink = k.active ? 1 : 0;
+  // shadow
+  ctx.save(); ctx.translate(5, 9); ctx.globalAlpha = 0.16; ctx.fillStyle = '#3a2040';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(-22, -14, -56, -17); ctx.lineTo(-170, -17); ctx.lineTo(-170, 17); ctx.lineTo(-78, 17); ctx.quadraticCurveTo(-26, 13, 0, 0); ctx.fill();
+  ctx.restore();
+  // blade
+  const grd = ctx.createLinearGradient(0, -17, 0, 17);
+  grd.addColorStop(0, '#f6f8fb'); grd.addColorStop(0.45, '#cfd6df'); grd.addColorStop(0.55, '#aab3bf'); grd.addColorStop(1, '#e9edf2');
+  ctx.fillStyle = grd;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(-22, -14, -56, -17); ctx.lineTo(-170, -17); ctx.lineTo(-170, 17); ctx.lineTo(-78, 17); ctx.quadraticCurveTo(-26, 13, 0, 0); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(80,90,105,.55)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-30, -11); ctx.lineTo(-165, -12); ctx.stroke();
+  ctx.strokeStyle = 'rgba(90,100,115,.25)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(-60, 9); ctx.quadraticCurveTo(-30, 7, -8, 1); ctx.stroke();
+  // bolster + handle
+  ctx.fillStyle = '#9aa3af'; ctx.fillRect(-176, -18, 8, 36);
+  const hg = ctx.createLinearGradient(0, -14, 0, 14);
+  hg.addColorStop(0, '#5a3d4f'); hg.addColorStop(0.5, '#3d2635'); hg.addColorStop(1, '#2a1a26');
+  ctx.fillStyle = hg;
+  ctx.beginPath(); ctx.roundRect(-290, -14, 116, 28, 12); ctx.fill();
+  ctx.fillStyle = '#d7c7d0'; for (const rx of [-262, -226, -190]) { ctx.beginPath(); ctx.arc(rx, 0, 3, 0, TAU); ctx.fill(); }
+  ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(-280, -9); ctx.lineTo(-184, -9); ctx.stroke();
+  ctx.restore();
+  // tip glint
+  if (sink) { ctx.save(); ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(x, y, 2.4, 0, TAU); ctx.fill(); ctx.restore(); }
+}
+
+function drawMesh() {
+  ctx.save(); ctx.lineWidth = 0.6;
+  for (const p of pieces) {
+    ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.beginPath();
+    for (let e = 0; e < p.ne; e++) { ctx.moveTo(p.x[p.ea[e]], p.y[p.ea[e]]); ctx.lineTo(p.x[p.eb[e]], p.y[p.eb[e]]); }
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,0,.6)';
+    for (const L of p.loops) for (const v of L) ctx.fillRect(p.x[v] - 1, p.y[v] - 1, 2, 2);
+    if (knife.tipUid >= 0) { const ti = p.uid.indexOf(knife.tipUid); if (ti >= 0) { ctx.strokeStyle = 'red'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(p.x[ti], p.y[ti], 6, 0, TAU); ctx.stroke(); } }
+    // inverted triangles
+    ctx.fillStyle = 'rgba(0,255,0,.6)';
+    for (let t = 0; t < p.tri.length / 3; t++) { const a = p.tri[3 * t], b = p.tri[3 * t + 1], c = p.tri[3 * t + 2]; if (triArea(p.x, p.y, a, b, c) < 0) { ctx.beginPath(); ctx.moveTo(p.x[a], p.y[a]); ctx.lineTo(p.x[b], p.y[b]); ctx.lineTo(p.x[c], p.y[c]); ctx.fill(); } }
+  }
+  ctx.restore();
+}
+
+function render() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0);
+  const s = world.dpr * world.vs;
+  ctx.setTransform(s, 0, 0, s, 0, 0);
+  for (const p of pieces) drawPiece(p);
+  if (window.__debugMesh) drawMesh();
+  drawKnife();
+}
+
+/* ------------------------------------------------------------------ */
+/* Main loop                                                           */
+/* ------------------------------------------------------------------ */
+let lastT = 0, acc = 0, frameAvg = 16, simTime = 0;
+const FIXED = 1 / 60;
+
+function stepFrame(dt) {
+  processKnife(dt);
+  for (const p of pieces) p.impact = 0;
+  const n = CFG.substeps, h = dt / n;
+  for (let i = 0; i < n; i++) substep(h);
+  simTime += dt;
+  // sounds
+  let speedSum = 0, cnt = 0;
+  for (const p of pieces) {
+    if (p.impact > 260 && simTime - p.lastThud > 0.16) { p.lastThud = simTime; Sfx.thud(p.impact / 1800); }
+  }
+  if (grab) {
+    const p = grab.piece;
+    for (let j = 0; j < grab.idx.length; j += 3) { const i = grab.idx[j]; speedSum += Math.hypot(p.vx[i], p.vy[i]); cnt++; }
+    Sfx.rustle(cnt ? speedSum / cnt / 1400 : 0);
+  } else Sfx.rustle(0);
+}
+
+function frame(t) {
+  requestAnimationFrame(frame);
+  if (window.__paused) { lastT = t; render(); return; }
+  if (!lastT) lastT = t;
+  let dt = (t - lastT) / 1000; lastT = t;
+  if (dt > 0.1) dt = 0.1;
+  frameAvg = lerp(frameAvg, dt * 1000, 0.05);
+  quality = frameAvg > 24 ? 0 : 1;
+  acc += dt;
+  let steps = 0;
+  while (acc >= FIXED && steps < 3) { stepFrame(FIXED); acc -= FIXED; steps++; }
+  if (steps === 3) acc = 0;
+  render();
+}
+
+/* ------------------------------------------------------------------ */
+/* Input                                                               */
+/* ------------------------------------------------------------------ */
+function toWorld(e) {
+  const r = canvas.getBoundingClientRect();
+  return [(e.clientX - r.left) / world.vs, (e.clientY - r.top) / world.vs];
+}
+
+function beginKnife(x, y) {
+  knife.active = true; knife.lastX = x; knife.lastY = y; knife.tipUid = -1; knife.queue = [];
+  knife.fromOutside = !findPieceAt(x, y);
+  Sfx.squish(0.25);
+}
+function turnKnife(dx, dy) {
+  const d = Math.hypot(dx, dy);
+  if (d < 3) return;
+  const a = Math.atan2(dy, dx);
+  let da = a - knife.angle; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
+  knife.angle += da * Math.min(1, 0.06 + d * 0.01);
+}
+function moveKnife(x, y) {
+  const dx = x - knife.lastX, dy = y - knife.lastY;
+  const d = Math.hypot(dx, dy);
+  if (d < 1.2) return;
+  knife.queue.push({ ax: knife.lastX, ay: knife.lastY, bx: x, by: y });
+  turnKnife(dx, dy);
+  knife.lastX = x; knife.lastY = y;
+}
+
+let pointerMode = null; // 'grab' | 'knife'
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('pointerdown', e => {
+  Sfx.init();
+  canvas.setPointerCapture(e.pointerId);
+  const [x, y] = toWorld(e);
+  mouse.x = x; mouse.y = y; mouse.inside = true; mouse.down = true;
+  if (e.button === 2 || tool === 'knife') { pointerMode = 'knife'; beginKnife(x, y); }
+  else if (e.button === 0) { pointerMode = 'grab'; if (!startGrab(x, y)) pointerMode = null; }
+  hideHint();
+  updateCursor();
+});
+canvas.addEventListener('pointermove', e => {
+  const evs = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+  for (const ev of evs) {
+    const [x, y] = toWorld(ev);
+    if (tool === 'knife' && !knife.active) turnKnife(x - mouse.x, y - mouse.y);
+    mouse.x = x; mouse.y = y;
+    if (pointerMode === 'knife' && knife.active) moveKnife(x, y);
+  }
+  mouse.inside = true;
+  updateCursor();
+});
+// If the knife is lifted just short of the far side (or the jelly wobbled away from it), finish the
+// last sliver of the cut instead of leaving a paper-thin bridge.
+function finishCrack() {
+  if (knife.tipUid < 0) return;
+  const dx = Math.cos(knife.angle), dy = Math.sin(knife.angle);
+  for (const p of pieces) {
+    const i = p.uid.indexOf(knife.tipUid);
+    if (i < 0) continue;
+    const x = p.x[i], y = p.y[i], reach = 16;
+    let hit = false;
+    for (const L of p.loops) {
+      for (let a = 0, b = L.length - 1; a < L.length && !hit; b = a++) {
+        const u = L[b], w = L[a], ex = p.x[w] - p.x[u], ey = p.y[w] - p.y[u];
+        const den = dx * ey - dy * ex;
+        if (Math.abs(den) < 1e-9) continue;
+        const t = ((p.x[u] - x) * ey - (p.y[u] - y) * ex) / den;
+        const s = ((p.x[u] - x) * dy - (p.y[u] - y) * dx) / den;
+        if (t > 0 && t < reach && s >= 0 && s <= 1) hit = true;
+      }
+    }
+    if (hit) { cutSegment(x, y, x + dx * 60, y + dy * 60, 400); knife.tipUid = -1; }
+    return;
+  }
+}
+
+function endPointer(e) {
+  mouse.down = false;
+  if (pointerMode === 'knife') { processKnife(1 / 60); finishCrack(); knife.active = false; knife.tipUid = -1; knife.queue = []; }
+  if (pointerMode === 'grab') { if (grab) Sfx.squish(0.3); grab = null; }
+  pointerMode = null;
+  updateCursor();
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerleave', () => { mouse.inside = false; });
+canvas.addEventListener('pointerenter', () => { mouse.inside = true; });
+
+function updateCursor() {
+  if (tool === 'knife' || pointerMode === 'knife') canvas.style.cursor = 'none';
+  else if (grab) canvas.style.cursor = 'grabbing';
+  else canvas.style.cursor = findPieceAt(mouse.x, mouse.y, 10) ? 'grab' : 'default';
+}
+
+/* ------------------------------------------------------------------ */
+/* UI                                                                  */
+/* ------------------------------------------------------------------ */
+const $ = id => document.getElementById(id);
+function setTool(t) {
+  tool = t;
+  $('btnGrab').classList.toggle('on', t === 'grab');
+  $('btnKnife').classList.toggle('on', t === 'knife');
+  updateCursor();
+}
+function updateCount() {
+  const n = pieces.length;
+  $('count').textContent = n + (n === 1 ? ' piece' : ' pieces');
+}
+function updateLabels() {
+  $('shapeName').textContent = SHAPES[shapeIdx];
+  const c = COLORS[colorIdx];
+  $('colorName').textContent = c.name;
+  $('colorDot').style.background = `radial-gradient(circle at 35% 30%, ${hsl(c.h, c.s, 78)}, ${hsl(c.h, c.s, 48)})`;
+}
+let hintTimer = 0;
+function hideHint() { $('hint').classList.add('hide'); }
+function newJelly() { spawnJelly(90); updateLabels(); }
+$('btnGrab').onclick = () => setTool('grab');
+$('btnKnife').onclick = () => setTool('knife');
+$('btnShape').onclick = () => { shapeIdx = (shapeIdx + 1) % SHAPES.length; newJelly(); Sfx.init(); };
+$('btnColor').onclick = () => { colorIdx = (colorIdx + 1) % COLORS.length; for (const p of pieces) { p.hue = COLORS[colorIdx].h; p.sat = COLORS[colorIdx].s; } updateLabels(); Sfx.init(); Sfx.squish(0.4); };
+$('btnReset').onclick = () => { Sfx.init(); newJelly(); };
+$('btnSound').onclick = () => {
+  Sfx.init(); Sfx.setMuted(!Sfx.muted);
+  $('sndIcon').innerHTML = Sfx.muted
+    ? '<path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="m17 9 5 6m0-6-5 6"/>'
+    : '<path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/>';
+};
+window.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  const k = e.key.toLowerCase();
+  if (k === 'k') setTool('knife'); else if (k === 'g') setTool('grab');
+  else if (k === ' ') { e.preventDefault(); setTool(tool === 'grab' ? 'knife' : 'grab'); }
+  else if (k === 'r') newJelly(); else if (k === 'm') $('btnSound').click();
+  else if (k >= '1' && k <= '4') { shapeIdx = +k - 1; newJelly(); }
+});
+window.addEventListener('resize', resize);
+
+/* ------------------------------------------------------------------ */
+/* Boot                                                                */
+/* ------------------------------------------------------------------ */
+resize();
+updateLabels();
+spawnJelly(90);
+setTimeout(hideHint, 9000);
+requestAnimationFrame(frame);
+
+// debugging / testing hooks
+window.__jelly = {
+  CFG, world, get pieces() { return pieces; }, knife, cutSegment, substep, stepFrame, spawnJelly, triArea,
+  setShape(i) { shapeIdx = i; }, setColor(i) { colorIdx = i; }, setTool, render,
+  get grab() { return grab; }, startGrab, mouse, findPieceAt, buildTopo, fanInfo, cutPiece,
+  pause() { window.__paused = true; },
+};
+})();
+</script>
+</body>
+</html>
